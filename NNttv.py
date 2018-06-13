@@ -1,36 +1,12 @@
-''' Author : Ana Paulina Bucki
+''' Author : Ana Paulina Bucki based on NN.py by mehdirezaie
     Date   : May 2018
 '''
 
-#!/usr/bin/env python
-
-import sys
-sys.path.insert(0,"/Documents/eBOSS/eboss-dr5")
-import NN
-
-# %matplot inline
-import matplotlib.pyplot as plt
-import numpy as np
-
-from astropy.io import fits
-
-data = fits.open('./ebossELGngal-features.fits')
-
-data.info()
-
-DATA = data[1].data
-
-DATA = np.array(DATA)
-
-# everything below is from NN.py
-
-from sklearn.model_selection import KFold
 import tensorflow as tf
 import numpy as np
 import os
 
 class preprocess(object):
-    #
     def __init__(self, data):
         self.X = data['features']
         self.Y = data['label'][:, np.newaxis]
@@ -39,8 +15,7 @@ class preprocess(object):
         if len(self.X.shape) == 1:
             self.X = self.X[:, np.newaxis]
         
-class Netregression(object):
-    #
+class Netregression(object):                  # class for general regression
     def __init__(self, train, valid, test):
         # train
         self.train = preprocess(train)
@@ -59,26 +34,28 @@ class Netregression(object):
         #
         x = tf.placeholder(tf.float32, [None, nfeature])
         #
-        # below layers
-        #
-        if (Units[0] == 0) & (Units[1] == 0 # linear (no layers)
-            y = tf.layers.dense(x, units=nclass, actuvation=None)
-        elif (Units[0] == 0) or (Units[1] == 0): # 1 layer [10,0] etc.
-            m  = int(Units[0] + Units[1])
-            y0 = tf.layers.dense(x,  units=m, activation=tf.nn.relu)
+        if Units == 'Lin':    # linear
+            y  = tf.layers.dense(x, units=nclass, activation=None)
+        elif len(Units) == 1: # 1 hidden layer
+            y0 = tf.layers.dense(x,  units=Units[0], activation=tf.nn.relu)
             y  = tf.layers.dense(y0, units=nclass, activation=None)
-            Units = [0, m]
-        elif (Units[0] != 0) & (Units[1] !=0) & (len(Units) == 2)                # 2 layers
+        elif len(Units) == 2:                                    # 2 hidden layers
             y0 = tf.layers.dense(x,  units=Units[0], activation=tf.nn.relu)
             y1 = tf.layers.dense(y0, units=Units[1], activation=tf.nn.relu)
             y  = tf.layers.dense(y1, units=nclass,   activation=None)
-        elif (Units[0] != 0) & (Units[1] !=0) & (Units[2] !=0) (len(Units) == 3) # 3 layers
+        elif len(Units) == 3:
             y0 = tf.layers.dense(x,  units=Units[0], activation=tf.nn.relu)
             y1 = tf.layers.dense(y0, units=Units[1], activation=tf.nn.relu)
-            y2 = tf.layers.dence(y1, units=Units[2], activation=tf.nn.relu)                  
+            y2 = tf.layers.dense(y1, units=Units[2], activation=tf.nn.relu)
             y  = tf.layers.dense(y2, units=nclass,   activation=None)
-        #
-        # Finish adding layers here
+        elif len(Units) == 4:
+            y0 = tf.layers.dense(x,  units=Units[0], activation=tf.nn.relu)
+            y1 = tf.layers.dense(y0, units=Units[1], activation=tf.nn.relu)
+            y2 = tf.layers.dense(y1, units=Units[2], activation=tf.nn.relu)
+            y3 = tf.layers.dense(y2, units=Units[3], activation=tf.nn.relu)
+            y  = tf.layers.dense(y3, units=nclass,   activation=None)
+        else:
+            raise ValueError('Units should be either None, [M], [M,N] ...')
         #
         y_ = tf.placeholder(tf.float32, [None, nclass])
         w  = tf.placeholder(tf.float32, [None, nclass])
@@ -167,39 +144,41 @@ class Netregression(object):
         
     def savez(self, indir='./', name='regression_2hl_5chain_10epoch'):
         output = {}
-        output['train'] = self.train.P, self.train.X, self.train.Y, self.train.W
-        output['test']  = self.test.P, self.test.X, self.test.Y, self.test.W
-        output['valid'] = self.valid.P, self.valid.X, self.valid.Y, self.valid.W
+        output['train']      = self.train.P, self.train.X, self.train.Y, self.train.W
+        output['test']       = self.test.P, self.test.X, self.test.Y, self.test.W
+        output['valid']      = self.valid.P, self.valid.X, self.valid.Y, self.valid.W
         output['epoch_MSEs'] = self.epoch_MSEs
-        output['chain_y'] = self.chain_y
-        output['options'] = self.optionsdic
+        output['chain_y']    = self.chain_y
+        output['options']    = self.optionsdic
         #
         if indir[-1] != '/':
             indir += '/'
         if not os.path.exists(indir):
             os.makedirs(indir)
+        #
         np.savez(indir+name, output)
+        #
         print ('output is saved as {} under {}'.format(name, indir))
         
-    def run_nchainlearning(indir, *arrays, **options):
-        n_arrays = len(arrays)
-        if n_arrays != 2:
-            raise ValuseError("Two arrays for train and test are required")
-        net = Netregression(*arrays)
-        net.train_evaluate(**options)
-        #
-        batchsize = options.pop('batchsize', 100)
-        nepoch    = options.pop('nepoch', 10)
-        nchain    = options.pop('nchain', 5)
-        Units     = options.pop('Units', [5,5,5,5])
-        Lrate     = options.pop('learning_rate', 0.001)
-        units     = ''.join([str(l) for l in Units])
-        #
-        ouname = 'reg-nepoch'+str(nepoch)+'-nchain'+str(nchain)
-        ouname += '-batchsize'+str(batchsize)+'units'+units
-        ouname += '-Lrate'+str(Lrate)
-        #
-        net.savez(indir=indir, name=ouname)
+def run_nchainlearning(indir, *arrays, **options):
+    n_arrays = len(arrays)
+    if n_arrays != 3:
+        raise ValuseError("Three arrays for train and test are required")
+    net = Netregression(*arrays)
+    net.train_evaluate(**options)
+    #
+    batchsize = options.pop('batchsize', 100)
+    nepoch    = options.pop('nepoch', 10)
+    nchain    = options.pop('nchain', 5)
+    Units     = options.pop('Units', [5,5,5,5])
+    Lrate     = options.pop('learning_rate', 0.001)
+    units     = ''.join([str(l) for l in Units])
+    #
+    ouname  = 'reg-nepoch'+str(nepoch)+'-nchain'+str(nchain)
+    ouname += '-batchsize'+str(batchsize)+'units'+units
+    ouname += '-Lrate'+str(Lrate)
+    #
+    net.savez(indir=indir, name=ouname)
 
 def read_NNfolds(files):
     
@@ -276,7 +255,7 @@ if __name__== '__main__':
     # run
     if rank == 0:
         print("bcast finished")
-    if rank in [0, 1, 2, 3]:
+    if rank in [0, 1, 2, 3, 4]:
         print("config on rank %d is: "%comm.rank, config)
         fold = 'fold'+str(rank)
         print(fold, ' is being processed')
